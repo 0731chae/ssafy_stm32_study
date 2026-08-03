@@ -8,7 +8,7 @@
 ### 과제
 - CUBEIDE 설치
 - CUBE MX 설치
-- 보드 LED 켜기 (OPTION)
+- 보드 LED(LD2) 켜기 (OPTION)
 
 ### 실습
 - STM32 소개
