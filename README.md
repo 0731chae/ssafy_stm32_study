@@ -49,6 +49,5 @@ ssafy_stm32_study/
  ┃ ┃ ┣ README.md				# 주차별 주제 요약/정리
  ┣ docs/					# 공통 문서
  ┃ ┣ study_rules.md
- ┃ ┣ week_template.md
  ┣ README.md				# 메인 개요
  ```
