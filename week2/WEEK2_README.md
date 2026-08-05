@@ -8,7 +8,7 @@
 
 ### 📝 2주차 과제
 
-- STM32F466RE Memory map 구조 정리
+- STM32F466RE Memory map 구조 및 GPIO 정리
 - LED 소자 1초 단위로 켰다 꺼보기(HAL_Library 방식, Bare-metal 방식)
 
 ### 🧑‍💻 2주차 실습
