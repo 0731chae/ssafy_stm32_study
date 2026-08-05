@@ -45,7 +45,7 @@ ssafy_stm32_study/
  ┣ week#N/					# 주차별 폴더
  ┃ ┣ week#N_README.md    # 주차별 주제 및 기본 예제
  ┃ ┣ 이름/
- ┃ ┃ ┣ 과제명.c		# 예제 개인 풀이 코드
+ ┃ ┃ ┣ main.c		# 예제 개인 풀이 코드
  ┃ ┃ ┣ README.md				# 주차별 주제 요약/정리
  ┣ docs/					# 공통 문서
  ┃ ┣ study_rules.md
