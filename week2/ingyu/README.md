@@ -570,12 +570,22 @@ static void LED_On_BSRR_Safe(void)
 
 ### 7.5 실측 영상
 
-| 방식 | 4회차 결과 | 영상 |
-|---|---|---|
-| **ODR** (`ODR \|= ...`) | **파랑만 켜짐** — 빨강 명령이 씹힘 | [`media/led_race_odr.mp4`](media/led_race_odr.mp4) |
-| **BSRR** (`BSRR = ...`) | **파랑 + 빨강 함께 켜짐** — 정상 | [`media/led_race_bsrr.mp4`](media/led_race_bsrr.mp4) |
+| 방식 | 4회차 결과 |
+|---|---|
+| **ODR** (`ODR \|= ...`) | **파랑만 켜짐** — 빨강 명령이 씹힘 |
+| **BSRR** (`BSRR = ...`) | **파랑 + 빨강 함께 켜짐** — 정상 |
 
-> 영상 링크를 클릭하면 GitHub 내장 플레이어로 재생된다.
+#### ① ODR 방식 — 빨간 LED가 씹힌다
+
+<!-- 영상 첨부 위치 (ODR) -->
+
+[파일 다운로드: `media/led_race_odr.mp4`](media/led_race_odr.mp4)
+
+#### ② BSRR 방식 — 정상 동작
+
+<!-- 영상 첨부 위치 (BSRR) -->
+
+[파일 다운로드: `media/led_race_bsrr.mp4`](media/led_race_bsrr.mp4)
 
 **관찰 포인트**
 
