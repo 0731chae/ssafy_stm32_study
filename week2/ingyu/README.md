@@ -617,9 +617,58 @@ https://github.com/user-attachments/assets/7e4ea2f0-65d2-48d9-a78f-90b2b71e0460
 
 ---
 
-## 8. 실습 — PA5 출력 설정 전체 코드
+## 8. 소스 코드
 
-### 8.1 Bare-metal
+실제 빌드·동작을 확인한 파일이다.
+
+```
+code/
+├── hal/
+│   └── main.c              HAL 방식 — 1초 blink
+└── baremetal/
+    ├── main.c              Bare-metal 방식 — 1초 blink (+ 7장 실험 코드)
+    └── stm32f4xx_it.c      PendSV 핸들러
+```
+
+| 파일 | 방식 | 핵심 |
+|---|---|---|
+| [`code/hal/main.c`](code/hal/main.c) | HAL | `HAL_GPIO_WritePin()` + `HAL_Delay()` |
+| [`code/baremetal/main.c`](code/baremetal/main.c) | Bare-metal | `GPIOA->BSRR` + SysTick 폴링 |
+| [`code/baremetal/stm32f4xx_it.c`](code/baremetal/stm32f4xx_it.c) | Bare-metal | `PendSV_Handler()` — 7장 실험용 |
+
+### 실행 모드 전환
+
+`code/baremetal/main.c` 상단의 `DEMO_MODE` 값으로 동작을 바꾼다.
+
+| 값 | 동작 |
+|---|---|
+| **`0`** | **과제 제출용 — 1초 blink** (기본값) |
+| `3` | 배선 점검 — 두 LED 동시 점멸 |
+| `4` | **7장 실험 — ODR 방식** (빨간 LED 씹힘) |
+| `5` | **7장 실험 — BSRR 방식** (정상) |
+
+7.5절의 두 영상은 각각 `DEMO_MODE 4` / `DEMO_MODE 5` 로 빌드해 촬영한 것이다.
+
+### CubeMX 설정
+
+| 항목 | HAL 프로젝트 | Bare-metal 프로젝트 |
+|---|---|---|
+| PA5 | `GPIO_Output`, User Label `OUTER_LED` | **설정하지 않음** (코드가 직접 설정) |
+| PA6 | — | **설정하지 않음** |
+| SYS Debug | Serial Wire | Serial Wire |
+| 클럭 | HSE → PLL → 168 MHz | HSI 16 MHz |
+
+> Bare-metal 프로젝트는 CubeMX에서 `Clear Pinouts` 후 SWD만 남겼다.
+> 따라서 `MX_GPIO_Init()` 은 사실상 비어 있고, GPIO 설정은 전부 `GPIO_Init_BareMetal()`
+> 이 레지스터를 직접 조작해 수행한다.
+> CubeMX가 만들어준 것은 스타트업 어셈블리(`startup_stm32f446zetx.s`), 링커 스크립트,
+> CMSIS 헤더뿐이며 이는 어느 방식이든 필요한 기반이다.
+
+---
+
+## 9. 코드 상세
+
+### 9.1 Bare-metal
 
 ```c
 #define LED_PIN  5U
@@ -650,7 +699,7 @@ GPIOA->BSRR = (1U << LED_PIN);          /* ON  : 0x0000_0020 */
 GPIOA->BSRR = (1U << (LED_PIN + 16));   /* OFF : 0x0020_0000 */
 ```
 
-### 8.2 1초 지연 (SysTick 직접 구성)
+### 9.2 1초 지연 (SysTick 직접 구성)
 
 `HAL_Delay()` 를 쓰지 않고 SysTick 레지스터를 직접 다룬다.
 SysTick은 `0xE000_E010` 에 있는 **Cortex-M4 코어 내부** 주변장치다.
@@ -681,7 +730,7 @@ static void delay_ms_BareMetal(uint32_t ms)
 > 위 코드가 `CTRL` 을 덮어쓰면서 TICKINT가 0이 되므로, 이후 `HAL_Delay()` 를 부르면
 > 무한 대기에 빠진다. 두 방식을 한 프로젝트에 섞지 말 것.
 
-### 8.3 HAL과의 대응
+### 9.3 HAL과의 대응
 
 | 단계 | HAL | Bare-metal |
 |---|---|---|
@@ -710,9 +759,9 @@ else                            { GPIOx->BSRR = (uint32_t)GPIO_Pin << 16u; }
 
 ---
 
-## 9. 검증 방법
+## 10. 검증 방법
 
-### 9.1 SFR 뷰 (STM32CubeIDE)
+### 10.1 SFR 뷰 (STM32CubeIDE)
 
 `Run > Debug` 로 디버그 세션 시작 후
 `Window > Show View > SFRs` → `GPIOA` 전개
@@ -727,7 +776,7 @@ else                            { GPIOx->BSRR = (uint32_t)GPIO_Pin << 16u; }
 `BSRR` 에 write하는 순간 `ODR` 이 `0x00` ↔ `0x20` 으로 토글되는 것도 확인할 수 있다.
 **계산한 값과 실제 레지스터 값이 일치**하는지 확인하면 본 문서의 내용이 검증된다.
 
-### 9.2 디스어셈블리
+### 10.2 디스어셈블리
 
 `Window > Show View > Disassembly` 에서 ODR 방식과 BSRR 방식의 명령어 수 차이를
 직접 확인할 수 있다.
@@ -747,7 +796,7 @@ str   r3, [r2, #24]     ; #24 = 0x18 = BSRR
 
 ---
 
-## 10. 참고 문서
+## 11. 참고 문서
 
 | 문서 | 내용 |
 |---|---|
