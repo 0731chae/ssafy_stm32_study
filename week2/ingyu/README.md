@@ -575,27 +575,17 @@ static void LED_On_BSRR_Safe(void)
 | **ODR** (`ODR \|= ...`) | **파랑만 켜짐** — 빨강 명령이 씹힘 |
 | **BSRR** (`BSRR = ...`) | **파랑 + 빨강 함께 켜짐** — 정상 |
 
-#### ① ODR 방식 — 빨간 LED가 씹힌다
-
-<!-- 영상 첨부 위치 (ODR) -->
-
-[파일 다운로드: `media/led_race_odr.mp4`](media/led_race_odr.mp4)
-
+#### ① ODR 방식 — 4회차에 빨간 LED가 씹힌다
 
 https://github.com/user-attachments/assets/492344a4-99f3-452d-a7e2-d763dd9e53fd
 
+<sub>재생이 안 될 경우 → [`media/led_race_odr.mp4`](media/led_race_odr.mp4)</sub>
 
-
-#### ② BSRR 방식 — 정상 동작
-
-<!-- 영상 첨부 위치 (BSRR) -->
-
-[파일 다운로드: `media/led_race_bsrr.mp4`](media/led_race_bsrr.mp4)
-
+#### ② BSRR 방식 — 4회차에도 정상 동작
 
 https://github.com/user-attachments/assets/7e4ea2f0-65d2-48d9-a78f-90b2b71e0460
 
-
+<sub>재생이 안 될 경우 → [`media/led_race_bsrr.mp4`](media/led_race_bsrr.mp4)</sub>
 
 **관찰 포인트**
 
