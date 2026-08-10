@@ -124,6 +124,9 @@ int main(void)
 
     /* USER CODE END WHILE */
 	  GPIOC->BSRR = (1U << 8);
+	  HAL_Delay(1000);
+	  GPIOC->BSRR = (1U << (8+16));
+	  HAL_Delay(1000);
 
 	  //GPIOC->BSRR = (1U << (8U + 16U));
     /* USER CODE BEGIN 3 */
