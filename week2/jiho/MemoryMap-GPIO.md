@@ -2,7 +2,8 @@
 
 ### 들어가기에 앞서 PINMAP소개
 ![f446RE의 PINMAP](./img/pinmap.png)
-보드에 연결할때 해당 PiINMAP을 참고하도록 하자
+
+보드에 연결할때 해당 PINMAP을 참고하도록 하자
 
 ### Memory Map
 STM32F446RE는 ARM Cortex-M4 기반의 고성능 MCU이다.
