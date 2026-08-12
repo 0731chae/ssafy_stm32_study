@@ -1,0 +1,1 @@
+https://nostalgic-lemon-496.notion.site/STM32F446RE_MemoryMap_GPIO_Study-3b9ce27e2e5f809698f6d17e168c4b62?source=copy_link
