@@ -5,7 +5,7 @@
 
 ## 📝 3주차 과제
 - GPIO의 Input, Output Mode에 대해 정리(Push-Pull, Open-Drain, Pull-up 등)
-- GPIO의 MODER, ODR, BSRR을 제외한 나머지 레지스터에 대해서 정리
+- GPIO의 MODER, ODR, BSRR을 제외한 나머지 레지스터에 대해서 정리 (이미 정리하신 분들은 기존 자료 그대로 복사 붙여넣기 하셔도 됩니다)
 - 초음파 센서 구동시키기 (웹 검색 및 AI 활용)
 
 ## 🙋 이번 주 발표자
