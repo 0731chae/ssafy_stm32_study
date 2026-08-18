@@ -21,29 +21,17 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#define TRIG_PORT GPIOA
-#define TRIG_PIN  GPIO_PIN_6
 
-#define ECHO_PORT GPIOA
-#define ECHO_PIN  GPIO_PIN_7
+/* HC-SR04 */
+#define HCSR04_TRIG_PORT    GPIOC
+#define HCSR04_TRIG_PIN     GPIO_PIN_2
 
-#define BLUE_PORT GPIOC
-#define BLUE_PIN  GPIO_PIN_6
+#define HCSR04_ECHO_PORT    GPIOC
+#define HCSR04_ECHO_PIN     GPIO_PIN_3
 
-#define YELLOW_PORT GPIOC
-#define YELLOW_PIN  GPIO_PIN_8
-
-#define RED_PORT GPIOC
-#define RED_PIN  GPIO_PIN_9
-
-#define BUZZER_PORT GPIOB
-#define BUZZER_PIN  GPIO_PIN_0
-
-#define BUTTON_PORT GPIOC
-#define BUTTON_PIN  GPIO_PIN_5
-
-volatile uint8_t system_on = 0;
-uint32_t last_button_time = 0;
+/* NUCLEO-F446RE User LED */
+#define LED_PORT             GPIOA
+#define LED_PIN              GPIO_PIN_5
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -77,136 +65,159 @@ static void MX_GPIO_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void DWT_Init(void)
+
+/* =========================================================
+ * DWT 초기화
+ * ========================================================= */
+static void DWT_Init(void)
 {
+    /* DWT와 Trace 기능 활성화 */
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    /* Cycle Counter 초기화 */
     DWT->CYCCNT = 0;
+
+    /* Cycle Counter 활성화 */
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
 
-void delay_us(uint32_t us)
+
+/* =========================================================
+ * DWT 기반 us Delay
+ * ========================================================= */
+static void DWT_Delay_us(uint32_t us)
 {
     uint32_t start = DWT->CYCCNT;
-    uint32_t ticks = us * (SystemCoreClock / 1000000);
 
-    while ((DWT->CYCCNT - start) < ticks);
-}
-void All_Output_Off(void)
-{
-    HAL_GPIO_WritePin(BLUE_PORT, BLUE_PIN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(YELLOW_PORT, YELLOW_PIN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(RED_PORT, RED_PIN, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, GPIO_PIN_RESET);
-}
-float HCSR04_GetDistance(void)
-{
-    uint32_t start_time;
-    uint32_t echo_time;
+    uint32_t cycles = us * (SystemCoreClock / 1000000U);
 
-    // TRIG LOW
-    HAL_GPIO_WritePin(TRIG_PORT, TRIG_PIN, GPIO_PIN_RESET);
-    delay_us(2);
-
-    // TRIG HIGH 10us
-    HAL_GPIO_WritePin(TRIG_PORT, TRIG_PIN, GPIO_PIN_SET);
-    delay_us(10);
-    HAL_GPIO_WritePin(TRIG_PORT, TRIG_PIN, GPIO_PIN_RESET);
-
-    // ECHO HIGH 대기
-    uint32_t timeout = HAL_GetTick();
-
-    while (HAL_GPIO_ReadPin(ECHO_PORT, ECHO_PIN) == GPIO_PIN_RESET)
+    while ((DWT->CYCCNT - start) < cycles)
     {
-        if (HAL_GetTick() - timeout > 50)
-            return -1;
-    }
-
-    start_time = DWT->CYCCNT;
-
-    // ECHO LOW 대기
-    while (HAL_GPIO_ReadPin(ECHO_PORT, ECHO_PIN) == GPIO_PIN_SET)
-    {
-        if (HAL_GetTick() - timeout > 50)
-            return -1;
-    }
-
-    echo_time = DWT->CYCCNT - start_time;
-
-    // CPU clock 기준 us 변환
-    float echo_us =
-        (float)echo_time / (SystemCoreClock / 1000000.0f);
-
-    // 거리(cm)
-    float distance = echo_us * 0.0343f / 2.0f;
-
-    return distance;
-}
-void Distance_Control(float distance)
-{
-    // 일단 전부 OFF
-    All_Output_Off();
-
-    if (distance >= 21.0f && distance <= 30.0f)
-    {
-        // Blue
-        HAL_GPIO_WritePin(
-            BLUE_PORT,
-            BLUE_PIN,
-            GPIO_PIN_SET
-        );
-    }
-    else if (distance >= 11.0f && distance < 21.0f)
-    {
-        // Yellow
-        HAL_GPIO_WritePin(
-            YELLOW_PORT,
-            YELLOW_PIN,
-            GPIO_PIN_SET
-        );
-    }
-    else if (distance >= 1.0f && distance < 11.0f)
-    {
-        // Red + Buzzer
-        HAL_GPIO_WritePin(
-            RED_PORT,
-            RED_PIN,
-            GPIO_PIN_SET
-        );
-
-        HAL_GPIO_WritePin(
-            BUZZER_PORT,
-            BUZZER_PIN,
-            GPIO_PIN_SET
-        );
+        ;
     }
 }
-void Button_Process(void)
-{
-    static uint8_t prev_state = GPIO_PIN_SET;
-    uint8_t current_state;
 
-    current_state = HAL_GPIO_ReadPin(
-        GPIOC,
-        GPIO_PIN_13
+
+/* =========================================================
+ * HC-SR04 거리 측정
+ *
+ * return:
+ *   >= 0 : 거리(cm)
+ *   -1   : Echo Timeout
+ * ========================================================= */
+static float HCSR04_ReadDistance(void)
+{
+    uint32_t start_cycle;
+    uint32_t end_cycle;
+    uint32_t timeout_start;
+
+    uint32_t echo_cycles;
+    float echo_us;
+    float distance_cm;
+
+
+    /* -----------------------------------------
+     * 1. TRIG LOW
+     * ----------------------------------------- */
+    HAL_GPIO_WritePin(
+        HCSR04_TRIG_PORT,
+        HCSR04_TRIG_PIN,
+        GPIO_PIN_RESET
     );
 
-    // 버튼이 눌린 순간
-    if (prev_state == GPIO_PIN_SET &&
-        current_state == GPIO_PIN_RESET)
+    DWT_Delay_us(2);
+
+
+    /* -----------------------------------------
+     * 2. TRIG HIGH 10us
+     * ----------------------------------------- */
+    HAL_GPIO_WritePin(
+        HCSR04_TRIG_PORT,
+        HCSR04_TRIG_PIN,
+        GPIO_PIN_SET
+    );
+
+    DWT_Delay_us(10);
+
+    HAL_GPIO_WritePin(
+        HCSR04_TRIG_PORT,
+        HCSR04_TRIG_PIN,
+        GPIO_PIN_RESET
+    );
+
+
+    /* -----------------------------------------
+     * 3. ECHO HIGH 기다림
+     *
+     * 약 30ms timeout
+     * ----------------------------------------- */
+    timeout_start = DWT->CYCCNT;
+
+    while (HAL_GPIO_ReadPin(
+               HCSR04_ECHO_PORT,
+               HCSR04_ECHO_PIN
+           ) == GPIO_PIN_RESET)
     {
-        system_on = !system_on;
-
-        if (system_on == 0)
+        if ((DWT->CYCCNT - timeout_start)
+                > (30U * (SystemCoreClock / 1000U)))
         {
-            All_Output_Off();
+            return -1.0f;
         }
-
-        HAL_Delay(20);  // 디바운싱
     }
 
-    prev_state = current_state;
-}
-/* USER CODE END 0 */
+
+    /* -----------------------------------------
+     * 4. ECHO HIGH 시작 시간
+     * ----------------------------------------- */
+    start_cycle = DWT->CYCCNT;
+
+
+    /* -----------------------------------------
+     * 5. ECHO LOW 기다림
+     *
+     * 최대 약 30ms
+     * ----------------------------------------- */
+    while (HAL_GPIO_ReadPin(
+               HCSR04_ECHO_PORT,
+               HCSR04_ECHO_PIN
+           ) == GPIO_PIN_SET)
+    {
+        if ((DWT->CYCCNT - start_cycle)
+                > (30U * (SystemCoreClock / 1000U)))
+        {
+            return -1.0f;
+        }
+    }
+
+
+    /* -----------------------------------------
+     * 6. ECHO HIGH 시간 계산
+     * ----------------------------------------- */
+    end_cycle = DWT->CYCCNT;
+
+    echo_cycles = end_cycle - start_cycle;
+
+
+    /* cycle -> us */
+    echo_us = (float)echo_cycles
+              / ((float)SystemCoreClock / 1000000.0f);
+
+
+    /* -----------------------------------------
+     * 7. 거리 계산
+     *
+     * 거리 = 시간 * 음속 / 2
+     *
+     * 음속 ≈ 343m/s
+     *
+     * cm 기준:
+     * distance = echo_us / 58
+     * ----------------------------------------- */
+    distance_cm = echo_us / 58.0f;
+
+
+    return distance_cm;
+}/* USER CODE END 0 */
 
 /**
   * @brief  The application entry point.
@@ -214,70 +225,70 @@ void Button_Process(void)
   */
 int main(void)
 {
+    HAL_Init();
 
-  /* USER CODE BEGIN 1 */
+    SystemClock_Config();
 
-  /* USER CODE END 1 */
+    MX_GPIO_Init();
 
-  /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    /* DWT 초기화 */
+    DWT_Init();
 
-  /* USER CODE BEGIN Init */
 
-  /* USER CODE END Init */
+    /* LED OFF */
+    HAL_GPIO_WritePin(
+        LED_PORT,
+        LED_PIN,
+        GPIO_PIN_RESET
+    );
 
-  /* Configure the system clock */
-  SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
+    while (1)
+    {
+        float distance;
 
-  /* USER CODE END SysInit */
+        distance = HCSR04_ReadDistance();
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  /* USER CODE BEGIN 2 */
 
-  /* USER CODE END 2 */
+        if (distance > 0.0f)
+        {
+            /* --------------------------------
+             * 정상 측정
+             *
+             * 20cm 이하이면 LED ON
+             * -------------------------------- */
+            if (distance <= 20.0f)
+            {
+                HAL_GPIO_WritePin(
+                    LED_PORT,
+                    LED_PIN,
+                    GPIO_PIN_SET
+                );
+            }
+            else
+            {
+                HAL_GPIO_WritePin(
+                    LED_PORT,
+                    LED_PIN,
+                    GPIO_PIN_RESET
+                );
+            }
+        }
+        else
+        {
+            /* 측정 실패 */
+            HAL_GPIO_WritePin(
+                LED_PORT,
+                LED_PIN,
+                GPIO_PIN_RESET
+            );
+        }
 
-  /* Initialize leds */
-  BSP_LED_Init(LED2);
 
-  /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
-  BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
-
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-
-    /* USER CODE END WHILE */
-	    Button_Process();
-
-	    if (system_on)
-	    {
-	        float distance = HCSR04_GetDistance();
-
-	        if (distance >= 0)
-	        {
-	            Distance_Control(distance);
-	        }
-	        else
-	        {
-	            All_Output_Off();
-	        }
-
-	        HAL_Delay(100);
-	    }
-	    else
-	    {
-	        All_Output_Off();
-	        HAL_Delay(10);
-	    }
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
+        /* HC-SR04 측정 간격 */
+        HAL_Delay(60);
+    }
 }
 
 /**
@@ -346,13 +357,20 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_8, GPIO_PIN_RESET);
+  /*Configure GPIO pin : PC2 */
+  GPIO_InitStruct.Pin = GPIO_PIN_2;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+  /*Configure GPIO pin : PC3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pins : USART_TX_Pin USART_RX_Pin */
   GPIO_InitStruct.Pin = USART_TX_Pin|USART_RX_Pin;
@@ -362,41 +380,17 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PA7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PC5 PC6 PC8 */
-  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_8;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PB0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PC9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
   /* USER CODE BEGIN MX_GPIO_Init_2 */
+  /* Configure GPIO pin : PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* LED OFF */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
@@ -434,4 +428,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
