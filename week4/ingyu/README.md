@@ -1,8 +1,10 @@
 # STM32 스터디 4주차
 
-A = 01000001
+`A = 01000001`
 
 stm스터디4주차_내용정리
+
+---
 
 # 1. UART 인터페이스란?
 
@@ -11,111 +13,124 @@ Universal Asynchronous Receiver/Transmitter 줄임말.
 
 쉽게말하면 MCU와 다른 장치가 0과 1을 한 주롤 차례차례 보내면서 통신하는 방식
 
+---
+
 # 2. UART 기본 배선
 
 STM32 상대 장치
 
+```text
 TX  ----------------> RX
 RX  <---------------- TX
 GND ----------------- GND
+```
 
 두 장치가 전압의 기준을 동일하게 봐야 하므로 GND도 연결해야 함.
+
+---
 
 # 3. UART가 비동기인 이유
 
 SPI같은 통신에는 Clock선이 있지만
 UART는 보통 Tx, Rx, GND 뿐이다..
+
 Clock 대신에 Baud Rate를 쓰기때문.
+
 예를들어, 115200 baud 라면
 초당 115200 개 비트를 전송 (즉 한 비트당 시간은 약 8.68us)한다.
+
+---
 
 # 4. 실제 전송 예시
 
 만약 문자 'A'를 보냈을때를 가정.
 
-### 1) A의 아스키코드를 이진수로 치환
+## 1) A의 아스키코드를 이진수로 치환
 
-<aside>
-💡
+> 💡
+> A = 01000001
 
-A = 01000001
+## 2) UART가 전송하는 방식
 
-</aside>
-
-### 2) UART가 전송하는 방식
-
-<aside>
-💡
-
-Start
-↓
-0 | 1 0 0 0 0 0 1 0 | 1
-└── Data bits ──┘
-Stop
-
-</aside>
+> 💡
+>
+> ```text
+> Start
+> ↓
+> 0 | 1 0 0 0 0 0 1 0 | 1
+> └── Data bits ──┘
+> Stop
+> ```
 
 즉, Start, Stop알림이 따로 있는데, LSB부터 전송하므로 A의 가장 작은 비트인(가장 오른쪽) 1 부터 순서대로 전송을 한다.
 
 **여기서 중요한건 데이터 전송을 LSB(최하위 비트)로 한다는것.**
 
-### 3) 일반적인 설정
+## 3) 일반적인 설정
 
-<aside>
-💡
+> 💡
+>
+> ```text
+> 115200
+> 8 Data bits
+> No Parity
+> 1 Stop bit
+> ```
 
-115200
-8 Data bits
-No Parity
-1 Stop bit
+## 4) 실제 데이터 전송량
 
-</aside>
+> 💡
+>
+> 대략
+>
+> ```text
+> 115200 / 10
+> = 11520 Byte/s
+> ```
+>
+> 한 바이트를 보내는데 총 10bit
+>
+> Start bit 1개
+> Data bit 8개
+> Stop bit 1개
+>
+> 가 필요하기 때문.
 
-### 4) 실제 데이터 전송량
-
-<aside>
-💡
-
-대략
-
-115200 / 10
-= 11520 Byte/s
-
-한 바이트를 보내는데 총 10bit
-
-Start bit 1개
-Data bit 8개
-Stop bit 1개
-
-가 필요하기 때문.
-
-</aside>
+---
 
 # 5. UART와 USART의 차이
 
 USART : Universal Synchronous/Asynchronous Receiver/Transmitter 줄임말
+
 즉,
+
+```text
 UART
 → 비동기 통신 가능
 
 USART
 → 비동기 + 동기 통신 가능
+```
 
 이렇게 구분된다.. 즉, UART에 동기 기능까지 추가한것.
+
 USART에는 필요하면 Clock신호를 사용하는 동기식 통신 기능도 있지만,
 STM32 개발에서 USART를 사용할 때 대부분은 비동기 모드만 사용하기때문에
 사실상 USART를 UART처럼 취급한다.
+
+---
 
 # 6. USART/UART 하드웨어 동작순서
 
 CPU가 직접 타이밍 맞춰 GPIO로 출력하는 것이 아니라,
 CPU가 USART에게 데이터 전송 명령을 내리면
 USART 하드웨어가 알아서 Baud Rate에 맞춰 비트를 하나씩 출력한다.
+
 USART는 CPU 코어와 같은 MCU 칩 안에 들어 있는 별도의 하드웨어 주변장치(peripheral)라고 봐야한다.
 
 CPU코어(Cortex-M4)와 내부 버스로 연결되어 있어서 cpu가 UART 하드웨어에 명령을 내리는 방식이다.
 
-### 1) 실제 송신 코드
+## 1) 실제 송신 코드
 
 ```c
 char data = 'A';
@@ -128,7 +143,7 @@ HAL_MAX_DELAY);
 
 이 코드 한줄은 내부적으로 다음 흐름과 같다.
 
-```c
+```text
 CPU
 ↓
 'A'
@@ -154,7 +169,7 @@ A 출력
 
 즉, USART에는 다음과 같은 별도의 레지스터가 있다. (STM32F4계열 기준)
 
-```c
+```text
 USART_SR
 USART_DR
 USART_BRR
@@ -165,18 +180,18 @@ USART_CR3
 
 각 역할은 다음과 같다.
 
-| 레지스터 | 역할 |
-| --- | --- |
-| SR | 현재 USART 상태 |
-| DR | 송수신 데이터 |
-| BRR | Baud Rate 설정 |
-| CR1 | USART 주요 설정 |
-| CR2 | Stop bit 등 설정 |
-| CR3 | DMA, 흐름 제어 등 |
+| 레지스터 | 역할            |
+| ---- | ------------- |
+| SR   | 현재 USART 상태   |
+| DR   | 송수신 데이터       |
+| BRR  | Baud Rate 설정  |
+| CR1  | USART 주요 설정   |
+| CR2  | Stop bit 등 설정 |
+| CR3  | DMA, 흐름 제어 등  |
 
-### 2) DR에 넣은 데이터가 TX로 나가는 순서도 (송신 흐름)
+## 2) DR에 넣은 데이터가 TX로 나가는 순서도 (송신 흐름)
 
-```c
+```text
 CPU
 │
 │ 'A'
@@ -199,62 +214,88 @@ TX
 
 CPU가 USART하드웨어의 DR에 데이터를 넣는데,
 실제로 핀에 하나씩 보내는 것은 Shift Register임.
+
 만약
-A = 01000001
+
+`A = 01000001`
+
 이게 DR레지스터에 있다면
 한 비트씩 순차적으로 시프트 레지스터하여 TX 핀의 전압을 순차적으로 바꿈.
 
-### 3) USART 수신 과정은 반대이다.
+## 3) USART 수신 과정은 반대이다.
 
 UART 선은 평소에 HIGH 상태였다가,
 LOW로 바뀌면 Start bit가 들어왔다고 판단함.
+
 그리고 설정된 Baud에 따라서 정해진 순간마다 RX 핀을 읽는데, 주요 플래그는 크게 2가지, 작게는 3가지로 구분된다.
 
-#### 3-1) RXNE (수신 플래그)
+### 3-1) RXNE (수신 플래그)
 
 데이터가 수신되면 USART 상태 레지스터의
 RXNE 플래그가 활성화 됨.
+
 정확한 뜻은 다음과 같다.
+
+```text
 RXNE
 Receive Data Register Not Empty
+```
 
 쉽게 얘기하면 cpu에게 데이터가 들어왔다는 신호를 보내는데,
 
 RXNE Interrupt 를 쓰던, cpu interrupt 방식을 쓰던해서 이 플래그를 읽으면
+
+```c
 data = USART2->DR;
+```
+
 cpu가 이렇게 읽어서 데이터를 가져온다.
 
-#### 3-2) TXE와 TC (송신 플래그)
+### 3-2) TXE와 TC (송신 플래그)
 
 TXE : Transmit Data Register Empty
 DR이 비었으니 다음 데이터를 넣어도 된다는 신호
+
 TC : Transmission Complete
 마지막 비트까지 TX핀으로 완전히 전송 완료됨.
 
 둘은 미묘하게 다르다.
+
 예를들어,
 
-```c
+```text
 DR             Shift Register
 
 비어 있음      아직 A 전송 중
 ```
 
 이 상태일때,
+
+```text
 TXE = 1
 TC  = 0
+```
+
 이렇게 된다.
+
 즉, TXE와 TC가 항상 같지는 않음…
+
 이 상황은
+
 "다음 문자를 DR에 넣는 것은 가능하지만, 이전 문자의 실제 전송은 아직 안 끝난 상태"를 의미한다.
+
+---
 
 # 6. 궁금증
 
-Q) Alternate Function은 무엇인가? 일반 GPIO INPUT, OUTPUT으로 처리하지 않는 이유가 있나? 그냥 송신은 GPIO OUTPUT으로, 수신은 GPIO INPUT 으로 처리하면 되지 않나?
+## Q) Alternate Function은 무엇인가? 일반 GPIO INPUT, OUTPUT으로 처리하지 않는 이유가 있나? 그냥 송신은 GPIO OUTPUT으로, 수신은 GPIO INPUT 으로 처리하면 되지 않나?
 
 A) 맞음. 이렇게 설정해서 CPU가 직접 제어해도 UART 통신을 구현할 수 있음.
+
 이걸 흔히 Softwae UART, bit-banging 이라고 함.
+
 그러나 이미 USART 전용 하드웨어가 있으므로, GPIO핀을 그 USART 하드웨어와 직접 연결해주는 모드가 필요한 것.. (이게 Alternate Function 임.)
+
 STM32의 핀은 내부적으로 다음과 같다.
 
 ![image.png](image.png)
@@ -264,7 +305,7 @@ STM32의 핀은 내부적으로 다음과 같다.
 다시 돌아와서,
 GPIO OUPUT으로 UART를 만들면 되지 않느냐?에 대한 대답은:
 
-”가능하다. 그런데 cpu가 매우 귀찮아진다.”
+> ”가능하다. 그런데 cpu가 매우 귀찮아진다.”
 
 이 방식을 software로 구현하면 다음과 같다.
 
@@ -285,6 +326,7 @@ HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET); // Stop
 ```
 
 이런식으로 코드를 작성하여 구현할 수는 있긴한데, cpu가 하기엔 그냥 쉬는 시간이 많기 때문에, 너무 비효율적인 작업이다.
+
 USART 하드웨어를 쓰면 그냥
 
 ```c
@@ -292,13 +334,18 @@ HAL_UART_Transmit(&huart2, &data, 1, 100);
 ```
 
 이 코드 한줄이면 끝난다.
+
 그래서 이 방식은 수신은 더 문제가 터진다. CPU가 계속 수신된 데이터가 있는지 주기적으로 체크해야하기때문..
 
-그래서 이 일은 그냥 
+그래서 이 일은 그냥
 
-1. Baud Rate는 어떻게 만들어지는가?
+## 1. Baud Rate는 어떻게 만들어지는가?
+
 사실 이것도 결국 MCU Clock을 이용..
+
 내부적으로 다음과 같음.
+
+```text
 System Clock
 ↓
 APB Clock
@@ -308,24 +355,39 @@ USART peripheral
 Baud Rate Generator
 ↓
 115200 baud
-2. 폴링, 인터럽트, DMA 세 가지 방식
-3. 폴링
+```
+
+## 2. 폴링, 인터럽트, DMA 세 가지 방식
+
+## 3. 폴링
+
+```text
 HAL_UART_Transmit(...)
 HAL_UART_Receive(...)
+```
 
 이걸 while loop로 반복하면서 CPU가 USART 상태를 직접 확인하면서 기다림..
 
-궁금증2 : 
-Q) uart하드웨어를 따로 안쓰고, 바로 gpio 입출력을 이용해서 송수신을 구현하면 cpu 폴링방식(dealy)를 쓰기 때문에 cpu 점유시간이 길어져, 
-다른 처리를 하기가 힘들어진다고 했는데, GPIO 인터럽트를 이용하면 UART 수신을 효율적으로도 구현할 수 있지 않나?
+---
+
+# 궁금증2
+
+## Q) uart하드웨어를 따로 안쓰고, 바로 gpio 입출력을 이용해서 송수신을 구현하면 cpu 폴링방식(dealy)를 쓰기 때문에 cpu 점유시간이 길어져, 다른 처리를 하기가 힘들어진다고 했는데, GPIO 인터럽트를 이용하면 UART 수신을 효율적으로도 구현할 수 있지 않나?
 
 A) GPIO 인터럽트만으로는 부족하지만,
 GPIO EXTI + Timer Interrupt를 조합하면 UART 수신을 구현할 수 있다.
+
 RX 핀이 평소 HIGH상태를 유지하다가, GPIO를 Falling Edge 인터럽트로 설정하면 CPU는 평소에 다른 일을 하다가,
+
+```text
 HIGH → LOW
+```
+
 가 발생했을 때만 인터럽트를 받게 되어, Start bit가 수신되었다는것을 알 수 있다.
+
 이제 Start bit를 발견했으니까 이후에는 대략 이렇게 읽어야 한다.
 
+```text
 Start 감지
     ↓
 약 1.5 bit 기다림
@@ -340,12 +402,16 @@ Data bit 2 샘플링
 Data bit 7
     ↓
 Stop bit 확인
+```
 
 문제는
 여기에서 delay_us(8.68)를 쓰면 CPU를 계속 잡아먹게된다.
+
 그래서 이 부분을 Timer interrupt로 해결한다.
+
 흐름은 다음과 같다.
 
+```text
 GPIO EXTI
 Start bit 발견
       ↓
@@ -363,35 +429,50 @@ Timer Interrupt
       ↓
 RX GPIO 읽기
 ...
+```
 
 즉 Software UART도 충분히 인터럽트 기반으로 만들 수 있다!!
+
 그런데 여기서 중요한 차이가 하나 발생한다.
+
 UART에서는 단순히 전압 변화만 보는 게 아니라 정확한 시간에 전압을 샘플링해야 한다.
 
 예를 들어 데이터가:
 
+```text
 1 1 1 1 0 0 0 0
+```
 
 이라고 하면 앞의 1 1 1 1 동안에는 전압 변화 자체가 없다.
 
+```text
 HIGH ───────────────────────
       bit0 bit1 bit2 bit3
+```
 
 GPIO edge interrupt만 기다리고 있으면
 
+```text
 bit0 = 1
 bit1 = 1
 bit2 = 1
 bit3 = 1
+```
 
 이라는 걸 알아낼 수 없기때문에,
 그래서 반드시 Timer 같은 시간 기준이 추가로 필요하다. (cpu를 불필요하게 점유하고 싶지 않다면)
 
-Q) 그러면 인터럽트 기반 Software UART와 Hardware UART의 차이는?
-UART를 sofrware로도 구현할 수 있는데 굳이 하드웨어를 쓰는 이유가 있지 않을까?
-두 방식이 각각 송수신을 처리하는 방식을 보면 알수 있다.
-Software UART:
+---
 
+## Q) 그러면 인터럽트 기반 Software UART와 Hardware UART의 차이는?
+
+UART를 sofrware로도 구현할 수 있는데 굳이 하드웨어를 쓰는 이유가 있지 않을까?
+
+두 방식이 각각 송수신을 처리하는 방식을 보면 알수 있다.
+
+### Software UART:
+
+```text
 RX GPIO
  ↓
 EXTI
@@ -414,11 +495,13 @@ CPU가 GPIO 읽음
 ...
  ↓
 8bit 조립
+```
 
 CPU가 결국 비트 하나하나 처리해야 한다.
 
 반면 Hardware USART는:
 
+```text
 RX
  ↓
 USART 하드웨어
@@ -442,26 +525,41 @@ DR
 RXNE = 1
  ↓
 CPU Interrupt
+```
 
 CPU 입장에서는 중간 과정이 전부 사라지게 된다..
+
 특히 115200 baud에서 한 비트가 8.68 μs밖에 안 되기 때문에 Software UART를 Timer Interrupt로 구현하면 CPU가 굉장히 자주 인터럽트를 받아야 한다.
+
 다른 인터럽트 때문에 타이밍이 밀리면 샘플링 시점이 흔들리는 문제도 생길 수 있다.
 
 즉, sorftware로도 uart를 구현할수는 있긴 한데, 인터럽트를 너무 자주 발생하기 때문에 샘플링 시점이 흔들리는 문제가 발생할 수 있어서 비효율적이다.
->> 즉! 정확한 샘플링 시점을 구현하기 위해선 uart라는 자체 하드웨어가 불가피하다.
+
+> 즉! 정확한 샘플링 시점을 구현하기 위해선 uart라는 자체 하드웨어가 불가피하다.
 
 이걸 압축 요약하면 다음과 같다:
-Software UART는 단순 구현에서는 delay를 이용할 수 있으며, GPIO 인터럽트와 Timer 인터럽트를 이용하면 CPU가 계속 대기하지 않도록 구현할 수도 있다. 하지만 이 경우에도 CPU가 각 비트의 타이밍과 샘플링을 직접 처리해야 하므로 CPU 부하와 타이밍 오차 문제가 존재한다. Hardware USART를 사용하면 Baud Rate 생성, Start Bit 검출, 비트 샘플링, Shift 작업 등을 USART 주변장치가 전담하고 CPU는 바이트 단위로만 처리할 수 있다.
 
+> Software UART는 단순 구현에서는 delay를 이용할 수 있으며, GPIO 인터럽트와 Timer 인터럽트를 이용하면 CPU가 계속 대기하지 않도록 구현할 수도 있다. 하지만 이 경우에도 CPU가 각 비트의 타이밍과 샘플링을 직접 처리해야 하므로 CPU 부하와 타이밍 오차 문제가 존재한다. Hardware USART를 사용하면 Baud Rate 생성, Start Bit 검출, 비트 샘플링, Shift 작업 등을 USART 주변장치가 전담하고 CPU는 바이트 단위로만 처리할 수 있다.
 
+---
 
+# 1. 인터럽트
 
-1. 인터럽트
+```text
 HAL_UART_Receive_IT(...)
+```
+
 RX데이터가 도착하면 USART 인터럽트가 발생하기 때문에, RX 데이터가 도착할때까지 cpu는 다른 일을 할 수 있음.
-2. DMA 방식
+
+---
+
+# 2. DMA 방식
+
 대량의 데이터를 송수신할때 사용
+
 흐름도:
+
+```text
 Memory
 │
 ↓
@@ -472,13 +570,23 @@ USART
 │
 ↓
 TX
+```
 
 즉, cpu가 일일이 1바이트 보내기 를 반복하지 않고, DMA에게
-"이 메모리 1000바이트를 USART로 보내" 라고 시킨 뒤 다른 일을 함..
+
+> "이 메모리 1000바이트를 USART로 보내"
+
+라고 시킨 뒤 다른 일을 함..
+
 센서 데이터, GPS, 통신 모듈 등 데이터를 많이 받을 때 매우 유용하다.
 
-1. NUCLEO 보드 기준, 별도의 USB-UART 모듈 없어도 PC와 시리얼 통신이 가능.
+---
+
+# 1. NUCLEO 보드 기준, 별도의 USB-UART 모듈 없어도 PC와 시리얼 통신이 가능.
+
 흐름은 다음과 같다.
+
+```text
 STM32 F446RE
 
 USART2 TX
@@ -491,11 +599,19 @@ PC
 │
 ↓
 Serial Terminal
+```
 
-1. 전체 동작 과정 정리
+---
+
+# 1. 전체 동작 과정 정리
+
+```text
 HAL_UART_Transmit(&huart2, data, len, timeout);
+```
+
 이 코드 한줄의 실제 흐름은 다음과 같다.
 
+```text
 ① STM32 Clock 생성
 ↓
 ② USART2에 Clock 공급
@@ -521,9 +637,11 @@ HAL_UART_Transmit(&huart2, data, len, timeout);
 ⑫ 상대 장치 RX가 신호 수신
 ↓
 ⑬ 상대 USART가 다시 byte로 복원
+```
 
 수신할때는 흐름도는 반대이다.
 
+```text
 상대 TX
 ↓
 STM32 RX
@@ -541,23 +659,27 @@ DR
 RXNE = 1
 ↓
 CPU가 DR 읽음
+```
 
-1. 전체 용어 정리
-| 개념 | 핵심 |
+---
+
+# 1. 전체 용어 정리
+
+| 개념         | 핵심                                      |
 | ---------- | --------------------------------------- |
-| UART | 비동기 직렬 통신 |
-| USART | 동기 + 비동기 직렬 통신 |
-| TX | 송신 |
-| RX | 수신 |
-| Baud Rate | 초당 신호 전송 속도 |
+| UART       | 비동기 직렬 통신                               |
+| USART      | 동기 + 비동기 직렬 통신                          |
+| TX         | 송신                                      |
+| RX         | 수신                                      |
+| Baud Rate  | 초당 신호 전송 속도                             |
 | 115200 8N1 | 115200 baud, 8bit, parity 없음, stop 1bit |
-| Start Bit | 데이터 시작 알림 |
-| Stop Bit | 데이터 종료 알림 |
-| DR | 송수신 데이터 레지스터 |
-| TXE | 다음 송신 데이터를 넣을 수 있음 |
-| TC | 실제 송신까지 완전히 끝남 |
-| RXNE | 수신 데이터가 들어옴 |
-| BRR | Baud Rate 설정 |
-| Polling | CPU가 계속 확인 |
-| Interrupt | 데이터가 오면 CPU에게 알림 |
-| DMA | 메모리↔USART 대량 전송 자동화 |
+| Start Bit  | 데이터 시작 알림                               |
+| Stop Bit   | 데이터 종료 알림                               |
+| DR         | 송수신 데이터 레지스터                            |
+| TXE        | 다음 송신 데이터를 넣을 수 있음                      |
+| TC         | 실제 송신까지 완전히 끝남                          |
+| RXNE       | 수신 데이터가 들어옴                             |
+| BRR        | Baud Rate 설정                            |
+| Polling    | CPU가 계속 확인                              |
+| Interrupt  | 데이터가 오면 CPU에게 알림                        |
+| DMA        | 메모리↔USART 대량 전송 자동화                     |
