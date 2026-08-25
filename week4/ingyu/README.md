@@ -463,6 +463,7 @@ bit3 = 1
 
 ---
 
+
 ## Q) 그러면 인터럽트 기반 Software UART와 Hardware UART의 차이는?
 
 UART를 sofrware로도 구현할 수 있는데 굳이 하드웨어를 쓰는 이유가 있지 않을까?
@@ -542,6 +543,101 @@ CPU 입장에서는 중간 과정이 전부 사라지게 된다..
 
 ---
 
+
+# 궁금증3
+
+## Q) 이전에 디버깅을 cubeIDE에서 live expression로 했는데, uart 통신과 무엇이 다른가?
+
+우선 live expression란?
+STM32 내부 RAM에 들어 있는 변수 값을 ST-LINK 디버거가 직접 읽어서 CubeIDE 화면에 실시간으로 보여주는 기능
+이다.
+차이점을 비교하면 다음과 같다.
+
+1) UART 디버깅
+코드로 직접 데이터를 내보내야함.
+
+```text
+sprintf(msg, "distance = %d\r\n", distance);
+
+HAL_UART_Transmit(
+    &huart2,
+    (uint8_t *)msg,
+    strlen(msg),
+    HAL_MAX_DELAY
+);
+```
+
+
+2) Live Expressions
+STM32가 보내는 게 아니라,
+PC의 디버거가 STM32 메모리에 들어가서 값을 읽어오는 것.
+
+
+# 궁금증4
+
+## Q) 차이는 알겠는데, Live Expressions가 있는데 UART 디버깅을 왜 하냐?
+
+
+이유1)
+Live Expressions는 디버거가 연결돼 있어야 한다는 개발환경 제약조건이 있다.
+실제 현장에서 매번 CubeIDE를 켜서 Debug 모드로 들어가면 불편하다.
+반면, UART는 그럴 필요없이 로그를 계속 UART로 출력하게 만들 수 있다.
+```text
+[INFO] Motor Start
+[INFO] Distance = 30cm
+[WARN] Obstacle detected
+[ERROR] Sensor timeout
+```
+
+
+이렇게..
+
+이유2)
+live expression는 이미 존재하는 변수값을 관찰하는 것에 굉장히 좋다.
+
+
+```text
+distance
+speed
+counter
+state
+adc_value
+```
+
+반면 UART는 원하는 정보를 조합해서 보여줄 수 있다.
+
+```text
+============================
+ROBOT STATUS
+============================
+Distance : 31 cm
+Motor    : Running
+Speed    : 72 %
+Mode     : AUTO
+Error    : NONE
+============================
+```
+
+
+이유3)
+더 나아가 UART는 양방향이다.
+PC
+ ↓
+"motor stop"
+ ↓
+UART RX
+ ↓
+STM32
+ ↓
+모터 정지
+
+Live Expressions는 기본적으로 이런 통신 인터페이스를 만드는 기능이 아니기 때문에
+다른 장비에서 STM이 수신을 받을 수 없다.
+
+
+
+---
+
 # 1. 인터럽트
 
 ```text
@@ -579,30 +675,10 @@ TX
 
 센서 데이터, GPS, 통신 모듈 등 데이터를 많이 받을 때 매우 유용하다.
 
----
-
-# 1. NUCLEO 보드 기준, 별도의 USB-UART 모듈 없어도 PC와 시리얼 통신이 가능.
-
-흐름은 다음과 같다.
-
-```text
-STM32 F446RE
-
-USART2 TX
-│
-↓
-ST-LINK
-│
-↓ USB
-PC
-│
-↓
-Serial Terminal
-```
 
 ---
 
-# 1. 전체 동작 과정 정리
+# 전체 동작 과정 정리
 
 ```text
 HAL_UART_Transmit(&huart2, data, len, timeout);
