@@ -251,6 +251,7 @@ TC  = 0
 # 6. 궁금증
 
 Q) Alternate Function은 무엇인가? 일반 GPIO INPUT, OUTPUT으로 처리하지 않는 이유가 있나? 그냥 송신은 GPIO OUTPUT으로, 수신은 GPIO INPUT 으로 처리하면 되지 않나?
+
 A) 맞음. 이렇게 설정해서 CPU가 직접 제어해도 UART 통신을 구현할 수 있음.
 이걸 흔히 Softwae UART, bit-banging 이라고 함.
 그러나 이미 USART 전용 하드웨어가 있으므로, GPIO핀을 그 USART 하드웨어와 직접 연결해주는 모드가 필요한 것.. (이게 Alternate Function 임.)
@@ -313,6 +314,147 @@ HAL_UART_Transmit(...)
 HAL_UART_Receive(...)
 
 이걸 while loop로 반복하면서 CPU가 USART 상태를 직접 확인하면서 기다림..
+
+궁금증2 : 
+Q) uart하드웨어를 따로 안쓰고, 바로 gpio 입출력을 이용해서 송수신을 구현하면 cpu 폴링방식(dealy)를 쓰기 때문에 cpu 점유시간이 길어져, 
+다른 처리를 하기가 힘들어진다고 했는데, GPIO 인터럽트를 이용하면 UART 수신을 효율적으로도 구현할 수 있지 않나?
+
+A) GPIO 인터럽트만으로는 부족하지만,
+GPIO EXTI + Timer Interrupt를 조합하면 UART 수신을 구현할 수 있다.
+RX 핀이 평소 HIGH상태를 유지하다가, GPIO를 Falling Edge 인터럽트로 설정하면 CPU는 평소에 다른 일을 하다가,
+HIGH → LOW
+가 발생했을 때만 인터럽트를 받게 되어, Start bit가 수신되었다는것을 알 수 있다.
+이제 Start bit를 발견했으니까 이후에는 대략 이렇게 읽어야 한다.
+
+Start 감지
+    ↓
+약 1.5 bit 기다림
+    ↓
+Data bit 0 샘플링
+    ↓ 8.68us
+Data bit 1 샘플링
+    ↓ 8.68us
+Data bit 2 샘플링
+    ↓
+...
+Data bit 7
+    ↓
+Stop bit 확인
+
+문제는
+여기에서 delay_us(8.68)를 쓰면 CPU를 계속 잡아먹게된다.
+그래서 이 부분을 Timer interrupt로 해결한다.
+흐름은 다음과 같다.
+
+GPIO EXTI
+Start bit 발견
+      ↓
+Timer 시작
+      ↓
+CPU는 다른 작업
+      ↓
+Timer Interrupt
+      ↓
+RX GPIO 읽기
+      ↓
+CPU 다른 작업
+      ↓
+Timer Interrupt
+      ↓
+RX GPIO 읽기
+...
+
+즉 Software UART도 충분히 인터럽트 기반으로 만들 수 있다!!
+그런데 여기서 중요한 차이가 하나 발생한다.
+UART에서는 단순히 전압 변화만 보는 게 아니라 정확한 시간에 전압을 샘플링해야 한다.
+
+예를 들어 데이터가:
+
+1 1 1 1 0 0 0 0
+
+이라고 하면 앞의 1 1 1 1 동안에는 전압 변화 자체가 없다.
+
+HIGH ───────────────────────
+      bit0 bit1 bit2 bit3
+
+GPIO edge interrupt만 기다리고 있으면
+
+bit0 = 1
+bit1 = 1
+bit2 = 1
+bit3 = 1
+
+이라는 걸 알아낼 수 없기때문에,
+그래서 반드시 Timer 같은 시간 기준이 추가로 필요하다. (cpu를 불필요하게 점유하고 싶지 않다면)
+
+Q) 그러면 인터럽트 기반 Software UART와 Hardware UART의 차이는?
+UART를 sofrware로도 구현할 수 있는데 굳이 하드웨어를 쓰는 이유가 있지 않을까?
+두 방식이 각각 송수신을 처리하는 방식을 보면 알수 있다.
+Software UART:
+
+RX GPIO
+ ↓
+EXTI
+ ↓
+CPU Interrupt
+ ↓
+Timer 시작
+ ↓
+Timer Interrupt
+ ↓
+CPU가 GPIO 읽음
+ ↓
+Timer Interrupt
+ ↓
+CPU가 GPIO 읽음
+ ↓
+Timer Interrupt
+ ↓
+CPU가 GPIO 읽음
+...
+ ↓
+8bit 조립
+
+CPU가 결국 비트 하나하나 처리해야 한다.
+
+반면 Hardware USART는:
+
+RX
+ ↓
+USART 하드웨어
+ ↓
+Start bit 감지
+ ↓
+Baud timing 생성
+ ↓
+bit0 샘플링
+ ↓
+bit1 샘플링
+ ↓
+...
+ ↓
+bit7 샘플링
+ ↓
+Shift Register
+ ↓
+DR
+ ↓
+RXNE = 1
+ ↓
+CPU Interrupt
+
+CPU 입장에서는 중간 과정이 전부 사라지게 된다..
+특히 115200 baud에서 한 비트가 8.68 μs밖에 안 되기 때문에 Software UART를 Timer Interrupt로 구현하면 CPU가 굉장히 자주 인터럽트를 받아야 한다.
+다른 인터럽트 때문에 타이밍이 밀리면 샘플링 시점이 흔들리는 문제도 생길 수 있다.
+
+즉, sorftware로도 uart를 구현할수는 있긴 한데, 인터럽트를 너무 자주 발생하기 때문에 샘플링 시점이 흔들리는 문제가 발생할 수 있어서 비효율적이다.
+>> 즉! 정확한 샘플링 시점을 구현하기 위해선 uart라는 자체 하드웨어가 불가피하다.
+
+이걸 압축 요약하면 다음과 같다:
+Software UART는 단순 구현에서는 delay를 이용할 수 있으며, GPIO 인터럽트와 Timer 인터럽트를 이용하면 CPU가 계속 대기하지 않도록 구현할 수도 있다. 하지만 이 경우에도 CPU가 각 비트의 타이밍과 샘플링을 직접 처리해야 하므로 CPU 부하와 타이밍 오차 문제가 존재한다. Hardware USART를 사용하면 Baud Rate 생성, Start Bit 검출, 비트 샘플링, Shift 작업 등을 USART 주변장치가 전담하고 CPU는 바이트 단위로만 처리할 수 있다.
+
+
+
 
 1. 인터럽트
 HAL_UART_Receive_IT(...)
