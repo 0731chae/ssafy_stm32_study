@@ -1,0 +1,34 @@
+## WEEK 4 : UART 통신 인터페이스
+
+[WEEK 4 Notion 정리 링크](https://puzzled-ravioli-c73.notion.site/Week4-UART-3c8f34d5a40e80bcb1e4f96f4632f1ee?source=copy_link)
+
+- UART 디버깅 환경 구축은 임시로 다음과 같이 진행
+
+1. Connectivity > USART2 선택 후 Mode를 Asynchronous로 설정합니다.
+2. 기본 핀 매핑이 PA2 (TX), PA3 (RX)로 지정되어 있는지 확인합니다.
+3. Parameter Settings에서 통신 파라미터를 설정합니다 (Baud Rate: 115200/Word Length: 8 Bits/Parity: None/Stop Bits: 1)
+4. stdio.h의 printf 출력을 USART2로 보내기 위해 \_\_io_putchar 함수를 재정의
+
+```
+/* USER CODE BEGIN Includes */
+#include <stdio.h>
+/* USER CODE END Includes */
+```
+
+5. /_ USER CODE BEGIN 0 _/ 영역에 리디렉션 함수를 추가
+
+```
+/* USER CODE BEGIN 0 */
+#ifdef __GNUC__
+  #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
+#else
+  #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
+#endif
+
+PUTCHAR_PROTOTYPE
+{
+  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}
+/* USER CODE END 0 */
+```
