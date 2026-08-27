@@ -438,3 +438,401 @@ char UART2_Read(void)
     return (char)(USART2->DR & 0xFF);
 }
 ```
+
+이후 심화과제로 채팅 만들기 했음
+
+폴링으로 구현 했을 때는 문제가 있었음
+
+내가 보내는 채팅이랑 상대가 보내는 채팅이 서로 데이터 레지스터를 덮어 쓰거나 해서 문맥이 오염되고 데이터가 오염돼 제대로 보여지지 않았음
+
+그래서 인터럽트 방식으로 바꿈
+
+![alt text](intrreupt.png)
+
+```
+#include "main.h"
+
+UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
+
+#define BUFFER_SIZE 100
+
+uint8_t uart1RxByte;
+uint8_t uart2RxByte;
+
+uint8_t myBuffer[BUFFER_SIZE];
+uint8_t otherBuffer[BUFFER_SIZE];
+
+volatile uint16_t myIndex = 0;
+volatile uint16_t otherIndex = 0;
+
+volatile uint16_t myLength = 0;
+volatile uint16_t otherLength = 0;
+
+volatile uint8_t myMessageReady = 0;
+volatile uint8_t otherMessageReady = 0;
+
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_USART1_UART_Init(void);
+static void MX_USART2_UART_Init(void);
+
+int main(void)
+{
+    HAL_Init();
+
+    SystemClock_Config();
+
+    MX_GPIO_Init();
+    MX_USART2_UART_Init();
+    MX_USART1_UART_Init();
+
+    BSP_LED_Init(LED2);
+    BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
+
+    HAL_UART_Receive_IT(&huart1, &uart1RxByte, 1);
+    HAL_UART_Receive_IT(&huart2, &uart2RxByte, 1);
+
+    while (1)
+    {
+        if (myMessageReady)
+        {
+            uint16_t len = myLength;
+
+            HAL_UART_Transmit(
+                &huart2,
+                (uint8_t *)"My: ",
+                4,
+                HAL_MAX_DELAY
+            );
+
+            HAL_UART_Transmit(
+                &huart2,
+                myBuffer,
+                len,
+                HAL_MAX_DELAY
+            );
+
+            HAL_UART_Transmit(
+                &huart2,
+                (uint8_t *)"\r\n",
+                2,
+                HAL_MAX_DELAY
+            );
+
+            HAL_UART_Transmit(
+                &huart1,
+                myBuffer,
+                len,
+                HAL_MAX_DELAY
+            );
+
+            HAL_UART_Transmit(
+                &huart1,
+                (uint8_t *)"\r\n",
+                2,
+                HAL_MAX_DELAY
+            );
+
+            myIndex = 0;
+            myLength = 0;
+            myMessageReady = 0;
+        }
+
+        if (otherMessageReady)
+        {
+            uint16_t len = otherLength;
+
+            HAL_UART_Transmit(
+                &huart2,
+                (uint8_t *)"Other: ",
+                7,
+                HAL_MAX_DELAY
+            );
+
+            HAL_UART_Transmit(
+                &huart2,
+                otherBuffer,
+                len,
+                HAL_MAX_DELAY
+            );
+
+            HAL_UART_Transmit(
+                &huart2,
+                (uint8_t *)"\r\n",
+                2,
+                HAL_MAX_DELAY
+            );
+
+            otherIndex = 0;
+            otherLength = 0;
+            otherMessageReady = 0;
+        }
+    }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1)
+    {
+        uint8_t ch = uart1RxByte;
+
+        if (!otherMessageReady)
+        {
+            if (ch == '\r' || ch == '\n')
+            {
+                if (otherIndex > 0)
+                {
+                    otherLength = otherIndex;
+                    otherMessageReady = 1;
+                }
+            }
+            else
+            {
+                if (otherIndex < BUFFER_SIZE - 1)
+                {
+                    otherBuffer[otherIndex++] = ch;
+                }
+            }
+        }
+
+        HAL_UART_Receive_IT(
+            &huart1,
+            &uart1RxByte,
+            1
+        );
+    }
+
+    if (huart->Instance == USART2)
+    {
+        uint8_t ch = uart2RxByte;
+
+        if (!myMessageReady)
+        {
+            if (ch == '\r' || ch == '\n')
+            {
+                if (myIndex > 0)
+                {
+                    myLength = myIndex;
+                    myMessageReady = 1;
+                }
+            }
+            else
+            {
+                if (myIndex < BUFFER_SIZE - 1)
+                {
+                    myBuffer[myIndex++] = ch;
+                }
+            }
+        }
+
+        HAL_UART_Receive_IT(
+            &huart2,
+            &uart2RxByte,
+            1
+        );
+    }
+}
+
+void SystemClock_Config(void)
+{
+    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+    __HAL_RCC_PWR_CLK_ENABLE();
+
+    __HAL_PWR_VOLTAGESCALING_CONFIG(
+        PWR_REGULATOR_VOLTAGE_SCALE3
+    );
+
+    RCC_OscInitStruct.OscillatorType =
+        RCC_OSCILLATORTYPE_HSI;
+
+    RCC_OscInitStruct.HSIState =
+        RCC_HSI_ON;
+
+    RCC_OscInitStruct.HSICalibrationValue =
+        RCC_HSICALIBRATION_DEFAULT;
+
+    RCC_OscInitStruct.PLL.PLLState =
+        RCC_PLL_ON;
+
+    RCC_OscInitStruct.PLL.PLLSource =
+        RCC_PLLSOURCE_HSI;
+
+    RCC_OscInitStruct.PLL.PLLM = 16;
+    RCC_OscInitStruct.PLL.PLLN = 336;
+
+    RCC_OscInitStruct.PLL.PLLP =
+        RCC_PLLP_DIV4;
+
+    RCC_OscInitStruct.PLL.PLLQ = 2;
+    RCC_OscInitStruct.PLL.PLLR = 2;
+
+    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    RCC_ClkInitStruct.ClockType =
+        RCC_CLOCKTYPE_HCLK |
+        RCC_CLOCKTYPE_SYSCLK |
+        RCC_CLOCKTYPE_PCLK1 |
+        RCC_CLOCKTYPE_PCLK2;
+
+    RCC_ClkInitStruct.SYSCLKSource =
+        RCC_SYSCLKSOURCE_PLLCLK;
+
+    RCC_ClkInitStruct.AHBCLKDivider =
+        RCC_SYSCLK_DIV1;
+
+    RCC_ClkInitStruct.APB1CLKDivider =
+        RCC_HCLK_DIV2;
+
+    RCC_ClkInitStruct.APB2CLKDivider =
+        RCC_HCLK_DIV1;
+
+    if (HAL_RCC_ClockConfig(
+            &RCC_ClkInitStruct,
+            FLASH_LATENCY_2) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+static void MX_USART1_UART_Init(void)
+{
+    huart1.Instance = USART1;
+
+    huart1.Init.BaudRate = 115200;
+    huart1.Init.WordLength = UART_WORDLENGTH_8B;
+    huart1.Init.StopBits = UART_STOPBITS_1;
+    huart1.Init.Parity = UART_PARITY_NONE;
+    huart1.Init.Mode = UART_MODE_TX_RX;
+    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+
+    if (HAL_UART_Init(&huart1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+static void MX_USART2_UART_Init(void)
+{
+    huart2.Instance = USART2;
+
+    huart2.Init.BaudRate = 115200;
+    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+    huart2.Init.StopBits = UART_STOPBITS_1;
+    huart2.Init.Parity = UART_PARITY_NONE;
+    huart2.Init.Mode = UART_MODE_TX_RX;
+    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+
+    if (HAL_UART_Init(&huart2) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+
+static void MX_GPIO_Init(void)
+{
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOH_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+}
+
+void Error_Handler(void)
+{
+    __disable_irq();
+
+    while (1)
+    {
+    }
+}
+
+#ifdef USE_FULL_ASSERT
+
+void assert_failed(uint8_t *file, uint32_t line)
+{
+}
+
+#endif
+
+```
+
+이게 인터럽트 방식 코드고
+핵심 코드는
+
+```
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1)
+    {
+        uint8_t ch = uart1RxByte;
+
+        if (!otherMessageReady)
+        {
+            if (ch == '\r' || ch == '\n')
+            {
+                if (otherIndex > 0)
+                {
+                    otherLength = otherIndex;
+                    otherMessageReady = 1;
+                }
+            }
+            else
+            {
+                if (otherIndex < BUFFER_SIZE - 1)
+                {
+                    otherBuffer[otherIndex++] = ch;
+                }
+            }
+        }
+
+        HAL_UART_Receive_IT(
+            &huart1,
+            &uart1RxByte,
+            1
+        );
+    }
+
+    if (huart->Instance == USART2)
+    {
+        uint8_t ch = uart2RxByte;
+
+        if (!myMessageReady)
+        {
+            if (ch == '\r' || ch == '\n')
+            {
+                if (myIndex > 0)
+                {
+                    myLength = myIndex;
+                    myMessageReady = 1;
+                }
+            }
+            else
+            {
+                if (myIndex < BUFFER_SIZE - 1)
+                {
+                    myBuffer[myIndex++] = ch;
+                }
+            }
+        }
+
+        HAL_UART_Receive_IT(
+            &huart2,
+            &uart2RxByte,
+            1
+        );
+    }
+}
+```
+
+이거임 Rx 인터럽트 발생하면 띄우는 과정을 인터럽트 서비스 루틴으로 설정하는 거임
+
+여기서 뭐 led를 토글하거나 하면 rx가 오면 토글하고 이렇게 바꿀 수도 있겠지?
+
+아니면 받은 데이터를 읽어서 뭐 ledon이라면 led 키고 ledoff면 끄고, 아니면 뭐 buzzeron 이나 뭐 이런식으로 다양하게 사용 가능할 듯
