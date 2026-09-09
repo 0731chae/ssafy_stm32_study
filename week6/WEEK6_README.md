@@ -4,7 +4,7 @@
 ## 🛖 장소 : 서울 강남구 논현로 522 6층
 
 ## 📝 6주차 과제
-- NVIC의 개념과 작동 원리에 대한 조사(대략적으로!)
+- NVIC의 개념과 작동 원리/과정에 대한 조사(대략적으로!)
 - startup code(startup_stm32f446retx.s) / Linker script(STM32F446RETX_FLASH.ld)조사 후 대략적인 컴파일 및 빌드 파일, stm32의 부팅 과정 정리
 - ISR 실행 후 어떻게 다시 원래 코드로 복귀하는지 정리
 
