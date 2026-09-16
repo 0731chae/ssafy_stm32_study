@@ -1,0 +1,73 @@
+{
+  "method": "Direct lossless PNG rendering of a cropped vector PDF page using PyMuPDF 1.28.2; no redrawing, label modification, or generative image processing.",
+  "coordinate_system": "PDF page points (1/72 inch), origin at top-left; rect = [x0, y0, x1, y1].",
+  "render_dpi": 360,
+  "images": [
+    {
+      "output": "clock_tree.png",
+      "revision": "RM0390 Rev 9",
+      "publication_date": "February 2026",
+      "page": 118,
+      "section": "6.2 Clocks",
+      "figure_number": 14,
+      "figure_title": "Clock tree",
+      "source_file": "rm0390-stm32f446xx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf",
+      "source_sha256": "2f3a98a18aa6347a1132f60fe19fde3190898b951c2721a2c35520d77c618094",
+      "pdf_page_index": 117,
+      "printed_page": 118,
+      "crop_rect_points": [
+        65.0,
+        88.0,
+        530.0,
+        678.0
+      ],
+      "image_width": 2325,
+      "image_height": 2950,
+      "png_sha256": "a9c4e267e378c26972a349595c82abf81f2f8ae5545abbd9896e25bc150f64d9"
+    },
+    {
+      "output": "timer_block_diagram.png",
+      "revision": "RM0390 Rev 9",
+      "publication_date": "February 2026",
+      "page": 511,
+      "section": "17.2 TIM2 to TIM5 main features (figure immediately before 17.3)",
+      "figure_number": 158,
+      "figure_title": "General-purpose timer block diagram",
+      "source_file": "rm0390-stm32f446xx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf",
+      "source_sha256": "2f3a98a18aa6347a1132f60fe19fde3190898b951c2721a2c35520d77c618094",
+      "pdf_page_index": 510,
+      "printed_page": 511,
+      "crop_rect_points": [
+        65.0,
+        88.0,
+        530.0,
+        558.0
+      ],
+      "image_width": 2325,
+      "image_height": 2350,
+      "png_sha256": "3dc74d22faa9dbd5bad4b297b0b9e621570a265c04789ceaf44db2001d321934"
+    },
+    {
+      "output": "systick_register.png",
+      "revision": "PM0214 Rev 10",
+      "publication_date": "March 2020",
+      "page": 247,
+      "section": "4.5.1 SysTick control and status register (STK_CTRL)",
+      "figure_number": null,
+      "figure_title": "STK_CTRL register bit layout (unnumbered diagram)",
+      "source_file": "pm0214-stm32-cortexm4-mcus-and-mpus-programming-manual-stmicroelectronics (1).pdf",
+      "source_sha256": "fb54012a46c674a26dee56bc8cdfa281315f78634f18998001144980b08d1b03",
+      "pdf_page_index": 246,
+      "printed_page": 247,
+      "crop_rect_points": [
+        65.0,
+        190.0,
+        531.0,
+        289.0
+      ],
+      "image_width": 2330,
+      "image_height": 495,
+      "png_sha256": "ed99ad1b4331f0c3906884cd367200ba8775e0c753a55adb32226b247de98209"
+    }
+  ]
+}
