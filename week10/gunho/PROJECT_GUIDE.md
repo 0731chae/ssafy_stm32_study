@@ -1,15 +1,18 @@
-# 미니 자동차 후진 보조 시스템 — CPU 버전 vs DMA 버전 (NUCLEO-F446RE)
+# 미니 자동차 후진 보조 시스템 (모터 없는 버전) — CPU vs DMA (NUCLEO-F446RE)
 
 같은 하드웨어, 같은 동작을 **CPU가 직접 하는 버전**과 **DMA에 맡기는 버전** 두 개의 프로젝트로 만들어 비교합니다.
 
-- 가변저항(가속 페달)으로 모터 속도를 조절합니다.
+- 가변저항(가속 페달)으로 **속도등의 밝기**를 조절합니다. PWM 듀티 = 속도입니다.
 - 초음파 센서로 뒤쪽 장애물까지의 거리를 잽니다.
 - 가까워질수록 부저가 빠르게 울리고, LED가 초록 → 노랑 → 빨강으로 바뀝니다.
-- 위험 거리에 들어오면 모터가 자동으로 멈춥니다.
+- 위험 거리에 들어오면 속도등이 자동으로 꺼집니다(= 비상 정지).
+
+> **모터 대신 LED를 쓴 이유**
+> DC 모터 + L298N 자리에 **PWM LED 하나**(PA8 = TIM1_CH1)를 그대로 끼웠습니다. 타이머 설정, 듀티 계산, 코드 구조는 모터 버전과 **완전히 같습니다.** 외부 전원·GND 공통·역기전력을 신경 쓸 일이 없어지고, 6장의 CPU/DMA 비교 실험 4개는 **모두 그대로 유효**합니다. 모터는 원래부터 두 버전이 **똑같이 CPU로 처리**하는 쪽이었기 때문입니다(0장 비교표 마지막 줄).
 
 > **읽기 전에**
 > - CubeMX 메뉴 이름과 HAL 함수는 4개 PDF에 나오지 않는 **일반 지식**입니다. STM32CubeIDE/CubeMX 버전에 따라 메뉴 위치가 조금 다를 수 있습니다.
-> - 이 가이드의 코드는 **실제 보드에서 아직 실행해 보지 않았습니다.** 처음 실행할 때는 모터를 바퀴가 뜬 상태로 두고, 저속으로 시험하세요.
+> - 이 가이드의 코드는 **실제 보드에서 아직 실행해 보지 않았습니다.** 처음 실행할 때는 터미널 로그로 값이 맞는지 먼저 확인하세요.
 > - 출처 표기: 〔RM〕 = RM0390, 〔DS〕 = STM32F446 데이터시트, 〔UM〕 = UM1724 (Nucleo-64)
 
 ---
@@ -35,7 +38,7 @@
 | **거리 측정 (초음파)** | TRIG 펄스를 CPU가 만들고, **에코가 끝날 때까지 기다리며** 시간을 잼 | TIM4가 TRIG 펄스를 **자동 발생**하고, 에코의 상승/하강 시각을 **입력 캡처 → DMA1**이 저장 |
 | **경고음 (부저)** | 루프가 돌 때마다 "지금 시각에 맞는 칸"의 값을 **CPU가 TIM3에 씀** | **TIM6(50ms 박자) → DMA1**이 패턴 표의 다음 칸을 TIM3에 씀. CPU는 표만 바꿈 |
 | **PC 로그 (UART)** | 전송이 **끝날 때까지 기다림** (블로킹) | **DMA1**이 보내고, CPU는 바로 다음 일을 함 |
-| LED, 모터 PWM, 버튼 | 같음 | 같음 |
+| LED, **속도등 PWM**, 버튼 | 같음 | 같음 |
 
 **핵심**: 두 버전은 **같은 패턴 표, 같은 판단 로직**을 씁니다. 다른 것은 **"누가 데이터를 옮기느냐(CPU냐 DMA냐)"** 하나뿐입니다. 그래서 차이가 생기면 그것은 순수하게 DMA 때문입니다.
 
@@ -44,6 +47,8 @@
 ## 1. 준비물과 배선
 ![](./img/16.png)
 
+> ⚠ 위 그림은 **모터(L298N) 버전**의 배선입니다. 이 가이드에서는 **L298N · DC 모터 · 모터용 외부 전원을 모두 빼고**, ENA가 꽂혀 있던 자리(**PA8**)에 **LED + 저항**을 연결합니다. 방향 핀 PA9 · PC7은 쓰지 않습니다. 아래 **1-2 배선표가 기준**입니다.
+
 ### 1-1. 준비물
 | 부품 | 수량 | 비고 |
 |---|---|---|
@@ -51,7 +56,7 @@
 | 패시브 부저 모듈 MH-FMD (3핀) | 1 | VCC / I/O / GND |
 | LED (초록, 노랑, 빨강) | 3 | + 220~330Ω 저항 3개 |
 | 푸시 버튼 | 2 | 비상 정지, 음소거 |
-| L298N 모터 드라이버 + DC 모터 | 1 | 모터용 **별도 전원** (예: 6~12V 배터리/어댑터) |
+| LED (속도등, 아무 색) | 1 | + 220~330Ω 저항 1개. **모터 자리를 대체** |
 | 초음파 센서 (HC-SR04 계열) | 1 | 5V 전원 |
 | 가변저항 (10kΩ 내외) | 1 | |
 | 브레드보드, 점퍼선 | | |
@@ -72,12 +77,7 @@ Nucleo의 Arduino 커넥터 이름(D0~D15, A0~A5)과 STM32 핀의 대응은 〔U
 | | TRIG | **D15** | PB8 | CPU: GPIO 출력 / DMA: TIM4_CH3 |
 | | ECHO | **D10** | PB6 | CPU: GPIO 입력 / DMA: TIM4_CH1. **5V 허용(FT) 핀** 〔DS p.56〕 |
 | | GND | GND | – | |
-| **L298N** | ENA | **D7** | PA8 | TIM1_CH1 (속도 PWM). ⚠ ENA 점퍼 캡을 **빼야** 함 |
-| | IN1 | **D8** | PA9 | 방향 |
-| | IN2 | **D9** | PC7 | 방향 |
-| | GND | GND | – | ⚠ **모터 전원 GND와 보드 GND를 반드시 공통**으로 |
-| | 12V(VS) | 모터용 외부 전원 + | – | ⚠ 보드 5V로 모터를 돌리지 말 것 |
-| | OUT1/OUT2 | DC 모터 | – | |
+| **속도등 LED** | 애노드(+) → 저항 | **D7** | PA8 | TIM1_CH1 (PWM). **밝기 = 속도**. 캐소드(−)는 GND |
 | **LED 초록** | 애노드(+) → 저항 | **D2** | PA10 | 캐소드(−)는 GND |
 | **LED 노랑** | 애노드(+) → 저항 | **D6** | PB10 | |
 | **LED 빨강** | 애노드(+) → 저항 | **D11** | PA7 | |
@@ -86,10 +86,11 @@ Nucleo의 Arduino 커넥터 이름(D0~D15, A0~A5)과 STM32 핀의 대응은 〔U
 | (보드 내장) | LD2 | – | PA5 | 루프 속도 표시용 |
 | (보드 내장) | USART2 | – | PA2/PA3 | ST-LINK 가상 COM 포트 〔UM p.26〕 |
 
-> ⚠ **안전 체크**
+> ⚠ **체크 사항**
 > - MH-FMD는 보통 **I/O가 LOW일 때 울리는(active-low)** 모듈입니다. 반대로 동작하면 코드의 `BUZZER_ACTIVE_LOW`를 0으로 바꾸세요.
-> - L298N의 입력(ENA/IN1/IN2)은 보통 3.3V 신호로도 동작하지만, 모듈마다 다를 수 있습니다.
+> - LED 4개는 모두 **저항을 직렬로** 넣습니다. 저항 없이 꽂으면 LED와 GPIO가 상합니다.
 > - 초음파 ECHO는 5V 신호입니다. PB6은 FT 핀이지만, 다른 핀으로 바꿀 때는 그 핀이 FT인지 〔DS p.46–57〕 핀 표에서 확인하거나 저항 분배로 낮추세요.
+> - **외부 전원이 필요 없습니다.** USB 케이블 하나로 전부 동작합니다.
 
 ---
 
@@ -100,7 +101,7 @@ Nucleo의 Arduino 커넥터 이름(D0~D15, A0~A5)과 STM32 핀의 대응은 〔U
 |---|---|
 | SYSCLK / HCLK | 180 MHz |
 | APB1 (PCLK1) | 45 MHz → **APB1 타이머 클럭 90 MHz** (TIM3, TIM4, TIM6) |
-| APB2 (PCLK2) | 90 MHz → **APB2 타이머 클럭 180 MHz** (TIM1) |
+| APB2 (PCLK2) | 90 MHz → **APB2 타이머 클럭 180 MHz** (TIM1 속도등) |
 | ADC 클럭 | PCLK2 / 4 = 22.5 MHz |
 
 APB 분주비가 1이 아니면 타이머 클럭은 PCLK의 2배가 됩니다. CubeMX Clock Configuration 화면의 "APB1 Timer clocks", "APB2 Timer clocks" 칸에서 실제 값을 꼭 확인하세요.
@@ -109,7 +110,7 @@ APB 분주비가 1이 아니면 타이머 클럭은 PCLK의 2배가 됩니다. C
 
 | 타이머 | 클럭 | Prescaler (PSC) | 카운터 주파수 | Period (ARR) | 결과 |
 |---|---|---|---|---|---|
-| **TIM1** 모터 PWM | 180 MHz | 179 | 1 MHz | 999 | **1 kHz** PWM, 듀티 0~999 |
+| **TIM1** 속도등 PWM | 180 MHz | 179 | 1 MHz | 999 | **1 kHz** PWM, 듀티 0~999 (깜빡임 안 보임) |
 | **TIM3** 부저 PWM | 90 MHz | 89 | 1 MHz | 499 | **2 kHz** 소리 |
 | **TIM4** (CPU 버전) | 90 MHz | 89 | 1 MHz | 65535 | 1µs 단위 자유 카운터 |
 | **TIM4** (DMA 버전) | 90 MHz | 89 | 1 MHz | 59999 | **60 ms** 측정 주기, CH3 펄스 10 → TRIG **10 µs** |
@@ -184,8 +185,6 @@ APB 분주비가 1이 아니면 타이머 클럭은 PCLK의 2배가 됩니다. C
 | PA10 | GPIO_Output | `LED_G` |
 | PB10 | GPIO_Output | `LED_Y` |
 | PA7 | GPIO_Output | `LED_R` |
-| PA9 | GPIO_Output | `MOTOR_IN1` |
-| PC7 | GPIO_Output | `MOTOR_IN2` |
 | PB0 | **GPIO_EXTI0** | `BTN_ESTOP` |
 | PC1 | **GPIO_EXTI1** | `BTN_MUTE` |
 
@@ -193,7 +192,7 @@ APB 분주비가 1이 아니면 타이머 클럭은 PCLK의 2배가 됩니다. C
 
 | 핀 | GPIO mode | Pull-up/Pull-down | Output level |
 |---|---|---|---|
-| 출력 6개 | Output Push Pull | No pull | Low |
+| 출력 4개 (PA5, PA10, PB10, PA7) | Output Push Pull | No pull | Low |
 | PB0, PC1 | **External Interrupt Mode with Falling edge trigger detection** | **Pull-up** | – |
 
 **System Core → GPIO → NVIC 탭** (또는 System Core → NVIC):
@@ -211,7 +210,7 @@ APB 분주비가 1이 아니면 타이머 클럭은 PCLK의 2배가 됩니다. C
 
 핀이 **PA2 (TX), PA3 (RX)**로 잡혔는지 확인합니다. 다른 핀으로 잡혔다면 PA2/PA3을 직접 클릭해 USART2_TX/RX로 지정하세요.
 
-### 3-7. Timers → TIM1 (모터 PWM)
+### 3-7. Timers → TIM1 (속도등 PWM)
 | 항목 | 값 |
 |---|---|
 | Clock Source | Internal Clock |
@@ -223,7 +222,9 @@ APB 분주비가 1이 아니면 타이머 클럭은 PCLK의 2배가 됩니다. C
 | Pulse | **0** |
 | CH Polarity | High |
 
-PA8에 User Label `MOTOR_PWM`을 붙입니다(선택).
+PA8에 User Label `SPEED_PWM`을 붙입니다(선택).
+
+> TIM1은 **고급 제어 타이머**라서 출력이 나오려면 MOE(Main Output Enable) 비트가 필요합니다. `HAL_TIM_PWM_Start()`가 이것까지 켜 주므로 추가 설정은 없습니다. Break/Dead-time 설정은 건드리지 않습니다.
 
 ### 3-8. Timers → TIM3 (부저 PWM)
 | 항목 | 값 |
@@ -340,9 +341,8 @@ typedef enum { ZONE_SAFE = 0, ZONE_MID, ZONE_NEAR, ZONE_CRITICAL } zone_t;
 #define DIST_NEAR_MM        200
 #define DIST_CRITICAL_MM    100
 
-/* ---- 모터: TIM1 CH1, 1MHz 카운터, ARR=999 → 1kHz ---- */
-#define MOTOR_PWM_MAX       999U
-#define MOTOR_DEADZONE      150U       /* 이보다 작은 듀티는 모터가 돌지 못하므로 0으로 */
+/* ---- 속도등(모터 자리): TIM1 CH1, 1MHz 카운터, ARR=999 → 1kHz ---- */
+#define SPEED_PWM_MAX       999U       /* 듀티 0~999 = 속도 0~100% = 밝기 0~100% */
 
 /* ---- 초음파 ---- */
 #define ULTRA_PERIOD_MS     60U        /* 측정 간격 (센서 권장 60ms 이상) */
@@ -374,7 +374,7 @@ static int32_t  ultrasonic_read_mm(void);
 static uint16_t pot_read(void);
 static zone_t   get_zone(int32_t mm);
 static void     leds_update(zone_t z);
-static void     motor_update(uint16_t pedal, zone_t z);
+static void     speed_update(uint16_t pedal, zone_t z);
 static void     beep_build_pattern(zone_t z, uint8_t muted);
 static int      make_report(int32_t dist_mm, uint16_t pedal, zone_t z, uint32_t loops_per_sec);
 /* USER CODE END PFP */
@@ -389,10 +389,8 @@ static int      make_report(int32_t dist_mm, uint16_t pedal, zone_t z, uint32_t 
   __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, BUZZER_OFF_CCR);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);          /* 부저 PWM 시작 (처음엔 무음) */
 
-  HAL_GPIO_WritePin(MOTOR_IN1_GPIO_Port, MOTOR_IN1_Pin, GPIO_PIN_SET);    /* 회전 방향 고정 */
-  HAL_GPIO_WritePin(MOTOR_IN2_GPIO_Port, MOTOR_IN2_Pin, GPIO_PIN_RESET);
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);          /* 모터 PWM 시작 (처음엔 정지) */
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);          /* 속도등 PWM 시작 (처음엔 꺼짐) */
 
   const char *hello = "\r\n===== Parking assist: CPU version =====\r\n";
   HAL_UART_Transmit(&huart2, (uint8_t *)hello, strlen(hello), 100);
@@ -426,10 +424,10 @@ static int      make_report(int32_t dist_mm, uint16_t pedal, zone_t z, uint32_t 
     /* (2) 가변저항: 1번 변환하고 끝날 때까지 기다림 */
     uint16_t pedal = pot_read();
 
-    /* (3) 판단: 구간, LED, 모터 */
+    /* (3) 판단: 구간, LED, 속도등 */
     zone_t zone = get_zone(dist_mm);
     leds_update(zone);
-    motor_update(pedal, zone);
+    speed_update(pedal, zone);
 
     /* (4) 경고음: 패턴이 바뀌면 표를 다시 만들고,
            '지금 시각에 해당하는 칸'의 값을 CPU가 직접 TIM3에 씀.
@@ -533,15 +531,15 @@ static void leds_update(zone_t z)
                     (z == ZONE_NEAR || z == ZONE_CRITICAL || estop) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
-static void motor_update(uint16_t pedal, zone_t z)
+static void speed_update(uint16_t pedal, zone_t z)
 {
   static const uint8_t limit_pct[] = { 100, 60, 30, 0 };   /* SAFE, MID, NEAR, CRITICAL */
-  uint32_t duty = (uint32_t)pedal * MOTOR_PWM_MAX / 4095U; /* 12bit ADC → 0~999 */
+  uint32_t duty = (uint32_t)pedal * SPEED_PWM_MAX / 4095U; /* 12bit ADC → 0~999 */
   duty = duty * limit_pct[z] / 100U;                       /* 거리에 따라 속도 제한 */
-  if (estop || duty < MOTOR_DEADZONE) {
-    duty = 0;
+  if (estop) {
+    duty = 0;                                              /* 비상 정지 = 완전 소등 */
   }
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, duty);
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, duty);      /* 듀티 = 밝기 = 속도 */
 }
 
 static void beep_build_pattern(zone_t z, uint8_t muted)
@@ -587,7 +585,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     last_estop = now;
     estop = !estop;
     if (estop) {
-      __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);         /* 루프를 기다리지 않고 즉시 정지 */
+      __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);         /* 루프를 기다리지 않고 즉시 소등 */
     }
   }
   if (GPIO_Pin == BTN_MUTE_Pin && now - last_mute > 200U) {
@@ -745,7 +743,7 @@ static volatile uint32_t dist_tick = 0;     /* 마지막으로 계산한 시각 
 static uint16_t pot_read(void);
 static zone_t   get_zone(int32_t mm);
 static void     leds_update(zone_t z);
-static void     motor_update(uint16_t pedal, zone_t z);
+static void     speed_update(uint16_t pedal, zone_t z);
 static void     beep_build_pattern(zone_t z, uint8_t muted);
 static int      make_report(int32_t dist_mm, uint16_t pedal, zone_t z, uint32_t loops_per_sec);
 /* USER CODE END PFP */
@@ -777,9 +775,7 @@ static int      make_report(int32_t dist_mm, uint16_t pedal, zone_t z, uint32_t 
   __HAL_TIM_ENABLE_DMA(&htim6, TIM_DMA_UPDATE);       /* TIM6 업데이트 → DMA 요청 */
   HAL_TIM_Base_Start(&htim6);                         /* 50ms 박자 시작 */
 
-  /* (4) 모터 */
-  HAL_GPIO_WritePin(MOTOR_IN1_GPIO_Port, MOTOR_IN1_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(MOTOR_IN2_GPIO_Port, MOTOR_IN2_Pin, GPIO_PIN_RESET);
+  /* (4) 속도등: CPU 버전과 똑같이 CPU가 직접 갱신한다 (일부러 남겨 둔 대조군) */
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 
@@ -811,7 +807,7 @@ static int      make_report(int32_t dist_mm, uint16_t pedal, zone_t z, uint32_t 
     /* (3) 판단: CPU 버전과 똑같음 */
     zone_t zone = get_zone(d);
     leds_update(zone);
-    motor_update(pedal, zone);
+    speed_update(pedal, zone);
 
     /* (4) 경고음: 패턴이 바뀔 때만 표 내용을 다시 씀. 재생(박자 맞추기)은 DMA가 함 */
     if (zone != cur_zone || mute != cur_mute) {
@@ -872,7 +868,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 }
 
 /* ===== 공통 로직: CPU 버전 ⑧의 아래 함수들을 그대로 복사 =====
-   get_zone(), leds_update(), motor_update(), beep_build_pattern(),
+   get_zone(), leds_update(), speed_update(), beep_build_pattern(),
    make_report(), HAL_GPIO_EXTI_Callback()
    (delay_us(), ultrasonic_read_mm(), CPU용 pot_read()는 복사하지 않음) */
 
@@ -895,7 +891,7 @@ CPU 버전과 같습니다. 터미널에 `===== Parking assist: DMA version ====
 | 관찰 대상 | 무엇을 보나 |
 |---|---|
 | **부저 박자** | "삐-삐-삐" 간격이 일정한가 |
-| **페달 반응** | 가변저항을 돌렸을 때 모터가 즉시, 부드럽게 반응하는가 |
+| **페달 반응** | 가변저항을 돌렸을 때 **속도등 밝기**가 즉시, 부드럽게 따라오는가 |
 | **로그의 `loop/s`** | 메인 루프가 1초에 몇 번 도는가 = CPU 여유 |
 | **LD2** | 루프가 느리면 **깜빡임이 보이고**, 빠르면 **희미하게 켜진 것처럼** 보임 |
 | **로그의 `pedal`** | 손을 대지 않았을 때 값이 얼마나 흔들리는가 (노이즈) |
@@ -908,16 +904,17 @@ CPU 버전과 같습니다. 터미널에 `===== Parking assist: DMA version ====
 |---|---|---|---|---|
 | ① 기본 | 1 | 0 | 15~20cm (NEAR) | 두 버전 모두 거의 정상. CPU 버전도 부하가 작으면 괜찮음 |
 | ② 로그 부하 | **10** | 0 | 15~20cm | **CPU**: 로그를 보내는 순간(약 70ms)마다 박자가 **한 번씩 늘어짐**. `loop/s` 감소. **DMA**: 변화 없음 |
-| ③ 무거운 작업 | 4 | **80** | 15~20cm | **CPU**: 50ms 칸을 놓쳐 **박자가 완전히 엉망**. 페달 반응이 둔해짐. **DMA**: 경고음 박자는 **완벽하게 유지**됨 (모터/LED 갱신은 둘 다 느려짐) |
+| ③ 무거운 작업 | 4 | **80** | 15~20cm | **CPU**: 50ms 칸을 놓쳐 **박자가 완전히 엉망**. 페달 반응이 둔해짐. **DMA**: 경고음 박자는 **완벽하게 유지**됨 (속도등/LED 갱신은 둘 다 느려짐) |
 | ④ 노이즈 | 1 | 0 | – | 가변저항을 가만히 두고 `pedal` 값의 흔들림 비교. **DMA**(64개 평균)가 훨씬 안정적 |
 
-- ③에서 DMA 버전도 모터와 LED는 느려집니다. 그 갱신은 CPU가 하기 때문입니다. **"DMA로 옮긴 일만 CPU 부하와 무관해진다"**는 것을 정확히 보여 주는 결과입니다.
+- ③에서 DMA 버전도 **속도등과 LED는 느려집니다.** 그 갱신은 CPU가 하기 때문입니다. 이 대비가 **"DMA로 옮긴 일만 CPU 부하와 무관해진다"**를 정확히 보여 줍니다. 속도등은 비교를 위해 **일부러 CPU에 남겨 둔 대조군**입니다.
 - `LOG_REPEAT=10`이면 약 850바이트를 보냅니다. 115200bps(초당 약 11,520바이트)에서는 **약 74ms** 동안 CPU 버전이 멈춥니다.
 
 ### 6-3. 보너스: 디버거로 CPU를 멈춰 보기 🎭
 DMA 버전을 실행하다가 CubeIDE에서 **Suspend(일시정지)**를 눌러 보세요.
 - CPU는 멈췄는데 **경고음은 계속 같은 박자로** 울릴 수 있습니다. 디버그 중 타이머를 멈출지는 `DBGMCU_APB1_FZ`의 `DBG_TIMx_STOP` 비트가 정합니다. 〔RM p.1307–1308〕
-- ⚠ **모터도 마지막 속도로 계속 돕니다.** CPU가 멈춰서 **비상 정지 버튼도 동작하지 않습니다.** 이 실험은 **모터 전원을 뺀 상태**에서 하세요.
+- **속도등은 마지막 밝기로 그대로 켜져 있습니다.** CPU가 멈췄으니 **비상 정지 버튼도 동작하지 않습니다.** "DMA는 계속 일하는데, CPU가 하던 일은 전부 멈춘다"가 한눈에 보입니다.
+- 모터가 아니라 LED이므로 이 실험을 **전원을 뺄 필요 없이 그냥** 해 볼 수 있습니다.
 
 ---
 
@@ -933,8 +930,10 @@ DMA 버전을 실행하다가 CubeIDE에서 **Suspend(일시정지)**를 눌러 
 | 거리가 항상 -1 | 센서 5V 전원, TRIG/ECHO 배선. DMA 버전은 TIM4 CH1=PB6, CH3=PB8 핀 배정 확인 |
 | 거리가 이상하게 튐 | 센서 앞 2cm 이내는 측정 불가. TIM4 Input Filter를 3 정도로 |
 | DMA 버전에서 거리가 항상 -1 (배선은 정상) | 오래된 STM32CubeF4 펌웨어 패키지의 HAL은 같은 타이머의 두 번째 채널에 `HAL_TIM_IC_Start_DMA()`를 호출하면 `HAL_BUSY`를 돌려줄 수 있습니다. 반환값을 확인하고, Help → Manage Embedded Software Packages에서 F4 패키지를 최신으로 업데이트하세요 |
-| 모터가 안 돎 | L298N **ENA 점퍼 제거**, 외부 전원, **GND 공통**, `MOTOR_DEADZONE` 값 낮추기 |
-| 모터가 반대로 돎 | `MOTOR_IN1`/`MOTOR_IN2` 출력 값을 서로 바꾸기 |
+| 속도등이 안 켜짐 | PA8이 **PWM Generation CH1**인지, LED **애노드(+)가 PA8 쪽**인지, 저항이 너무 크지 않은지 |
+| 속도등이 항상 최대 밝기 | CubeMX의 TIM1 `Pulse` 초기값. **0**으로 두고 코드가 쓰게 합니다 |
+| 속도등이 깜빡여 보임 | TIM1 PSC/ARR 확인. 1 kHz(PSC 179, ARR 999)면 눈에 안 보입니다 |
+| 어두운 쪽에서 밝기 변화가 잘 안 보임 | LED 밝기는 눈에 비선형으로 보입니다. 듀티가 낮은 구간은 차이가 작게 느껴지는 것이 정상입니다 |
 | DMA 버전에서 `pedal`이 0에서 안 변함 | `MX_DMA_Init()` 호출 순서, ADC의 DMA Continuous Requests = Enabled |
 | DMA 버전 로그가 첫 줄 이후 안 나옴 | NVIC에서 **USART2 global interrupt** 켰는지 |
 | 버튼이 한 번에 두 번 눌림 | 채터링. 콜백의 200ms 값을 늘리기 |
@@ -944,15 +943,16 @@ DMA 버전을 실행하다가 CubeIDE에서 **Suspend(일시정지)**를 눌러 
 
 ## 8. 심화 과제
 
-1. **모터 부드러운 출발 (DMA2)**
-   페달을 갑자기 밟아도 듀티가 서서히 올라가도록, **램프 표**를 TIM1 업데이트마다 DMA로 `TIM1->CCR1`에 씁니다.
+1. **속도등 부드러운 출발 (DMA2)**
+   페달을 갑자기 올려도 듀티가 서서히 올라가도록, **램프 표**를 TIM1 업데이트마다 DMA로 `TIM1->CCR1`에 씁니다.
    - 요청: TIM1_UP → **DMA2 Stream5 Channel6** 〔RM p.204〕
    - TIM1은 APB2 타이머라서 DMA2를 써야 합니다.
-   - 생각할 점: `motor_update()`도 CCR1에 쓰고 있어서 둘이 충돌합니다. 램프 중에는 누가 CCR1을 쓸지 정해야 합니다.
+   - 생각할 점: `speed_update()`도 CCR1에 쓰고 있어서 둘이 충돌합니다. 램프 중에는 누가 CCR1을 쓸지 정해야 합니다.
+   - 이걸 완성하면 **속도등까지 DMA로 넘어가서** 6-2 ③의 "둘 다 느려지는" 대조군이 사라집니다. 그 전후를 꼭 비교해 보세요.
 
 2. **빨간 LED 숨쉬기 효과**
-   빨간 LED를 PWM 핀으로 옮기고, 밝기 표(사인파)를 타이머 업데이트 DMA로 재생합니다.
-   - 핀과 타이머를 고를 때 RM p.204에서 **스트림 충돌**이 없는지 직접 확인해 보세요.
+   빨간 LED(PA7)를 PWM 핀으로 옮기고, 밝기 표(사인파)를 타이머 업데이트 DMA로 재생합니다.
+   - 핀과 타이머를 고를 때 RM p.204에서 **스트림 충돌**이 없는지 직접 확인해 보세요. 과제 1을 했다면 **DMA2 Stream5는 이미 사용 중**입니다.
 
 3. **멜로디 알림**
    출발할 때 "학교종" 멜로디를 재생합니다. TIM3의 **ARR**(음 높이)을 DMA로 바꾸는 방식입니다. 이때 CCR도 ARR의 절반으로 같이 바뀌어야 하는 문제를 어떻게 풀지 생각해 보세요.
